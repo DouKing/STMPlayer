@@ -10,7 +10,9 @@ import UIKit
 import AVFoundation
 
 @objc protocol STMPlayerDelegate {
-  func player(didChangeStatus player: STMPlayer)
+  @objc optional func player(didChangeStatus player: STMPlayer)
+  @objc optional func player(didUpdateCurrentDuration player: STMPlayer)
+  @objc optional func player(didUpdateTotalBuffer player: STMPlayer)
 }
 
 @objc enum STMPlayerStatus: Int {
@@ -32,20 +34,34 @@ open class STMPlayer: NSObject {
 
   //MARK: - Public -
 
-  var delegate: STMPlayerDelegate?
+  weak var delegate: STMPlayerDelegate?
+  var isPlaying: Bool {
+    guard let player = self.player else { return false }
+    return player.rate > 0
+  }
 
   var status: STMPlayerStatus = .unknown {
     didSet {
-      delegate?.player(didChangeStatus: self)
+      delegate?.player?(didChangeStatus: self)
     }
   }
 
-  var totalBuffer: Double?
-  var totalDuration: Double?
-  var currentSeconds: Double?
+  var totalBuffer: Double? {
+    didSet {
+      delegate?.player?(didUpdateTotalBuffer: self)
+    }
+  }
+  var totalDuration: Double? {
+    return item.playerItem?.duration.seconds
+  }
+  var currentDuration: Double? {
+    didSet {
+      delegate?.player?(didUpdateCurrentDuration: self)
+    }
+  }
 
   var playRate: Double? {
-    guard let total = totalDuration, let current = currentSeconds else { return nil }
+    guard let total = totalDuration, let current = currentDuration else { return nil }
     if total.isNaN || current.isNaN {
       return nil
     }
@@ -92,8 +108,7 @@ open class STMPlayer: NSObject {
 
   private func resetPlayer(_ oldPlayerItem: AVPlayerItem?) {
     totalBuffer = nil
-    totalDuration = nil
-    currentSeconds = nil
+    currentDuration = nil
 
     configurePlayer()
 
@@ -120,15 +135,7 @@ open class STMPlayer: NSObject {
     timeObserver = player?.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 1), queue: DispatchQueue.main) { [unowned self] (time) in
       let current = time.seconds
       if !current.isNaN {
-        self.currentSeconds = current
-      }
-
-      guard let playerItem = self.item.playerItem else { return }
-      let total = playerItem.duration.seconds
-      if self.totalDuration == nil {
-        if !total.isNaN {
-          self.totalDuration = total
-        }
+        self.currentDuration = current
       }
 
       if let currRate = self.playRate, currRate >= 1 {
